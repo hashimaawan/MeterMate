@@ -104,6 +104,38 @@ export function buildSubscriptionActive(input: {
   return blocks;
 }
 
+/** UC2 in-progress message. */
+export function buildUsageRecording(input: {
+  quantity: number;
+  unit: string;
+  componentLabel: string;
+}): KnownBlock[] {
+  return [
+    header(':bar_chart: Recording usage…'),
+    contextLine(
+      `Recording *${input.quantity} ${escape(input.unit)}* against *${escape(input.componentLabel)}*…`,
+    ),
+  ];
+}
+
+/** UC2 completion message. */
+export function buildUsageRecorded(input: {
+  componentLabel: string;
+  quantity: number;
+  unit: string;
+  periodTotal: number;
+}): KnownBlock[] {
+  return [
+    header(':white_check_mark: Usage recorded'),
+    fieldsGrid([
+      { label: 'Component', value: escape(input.componentLabel) },
+      { label: 'Recorded', value: `${input.quantity} ${escape(input.unit)}` },
+      { label: 'Period total', value: `${input.periodTotal} ${escape(input.unit)}` },
+      { label: 'Billing', value: 'Accrues to next invoice' },
+    ]),
+  ];
+}
+
 /** Generic failure message reused across UCs. */
 export function buildFailure(input: {
   useCase: string;

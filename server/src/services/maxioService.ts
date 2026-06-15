@@ -5,10 +5,10 @@
  *
  * UC1 (Book & Subscribe) is implemented here; later UCs add their own functions.
  */
-import { CollectionMethod } from '@maxio-com/advanced-billing-sdk';
+import { CollectionMethod, ComponentKind } from '@maxio-com/advanced-billing-sdk';
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
-import { maxio, toMaxioServiceError } from '../maxioClient.js';
+import { maxio, toMaxioServiceError, MaxioServiceError } from '../maxioClient.js';
 
 const log = createLogger('maxioService');
 
@@ -149,4 +149,134 @@ export async function listPlans(): Promise<PlanSummary[]> {
   } catch (err) {
     throw toMaxioServiceError(err, 'listPlans');
   }
+}
+
+/** Normalized result of a UC2 usage recording. */
+export interface UsageResult {
+  subscriptionId: number;
+  componentHandle: string;
+  componentName: string;
+  unit: string;
+  quantityRecorded: number;
+  /** Running total of recorded usage for the current billing period. */
+  periodTotal: number;
+  memo: string | null;
+}
+
+export interface RecordUsageInput {
+  subscriptionId: number;
+  componentHandle: string;
+  quantity: number;
+  memo?: string;
+}
+
+/** UsageQuantity is `number | string`; coerce to a finite number. */
+function toNumber(value: number | string | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * UC2 — record metered usage against a component on a subscription, then read
+ * back the running period total from the provider's usage history.
+ *
+ * The service dispatches on the cached component kind (per plan §UC2). The
+ * event-based path (`api-calls`) is deferred this phase — recording usage for
+ * an event-based component requires an EBB metric that the SDK cannot create —
+ * so it raises a clear, typed error rather than silently doing nothing.
+ */
+export async function recordUsage(input: RecordUsageInput): Promise<UsageResult> {
+  try {
+    // Resolve the component to learn its kind, name, and unit.
+    const { result: componentResponse } = await maxio.components.findComponent(
+      input.componentHandle,
+    );
+    const component = componentResponse.component;
+    if (!component?.id) {
+      throw new MaxioServiceError(
+        'Component not found',
+        404,
+        `No component with handle "${input.componentHandle}"`,
+      );
+    }
+
+    if (component.kind === ComponentKind.EventBasedComponent) {
+      throw new MaxioServiceError(
+        'Event-based usage recording is not enabled',
+        null,
+        `Component "${input.componentHandle}" is event-based; event recording is deferred this phase. Use a metered component (e.g. "consulting-minutes").`,
+      );
+    }
+
+    const unit = component.unitName ?? 'unit';
+    const componentName = component.name ?? input.componentHandle;
+
+    log.info('Recording metered usage', {
+      subscriptionId: input.subscriptionId,
+      componentHandle: input.componentHandle,
+      quantity: input.quantity,
+    });
+
+    // Record the usage. componentId accepts `handle:<handle>`.
+    await maxio.subscriptionComponents.createUsage(
+      input.subscriptionId,
+      `handle:${input.componentHandle}`,
+      {
+        usage: {
+          quantity: input.quantity,
+          ...(input.memo ? { memo: input.memo } : {}),
+        },
+      },
+    );
+
+    const periodTotal = await readPeriodUsageTotal(
+      input.subscriptionId,
+      input.componentHandle,
+    );
+
+    return {
+      subscriptionId: input.subscriptionId,
+      componentHandle: input.componentHandle,
+      componentName,
+      unit,
+      quantityRecorded: input.quantity,
+      periodTotal,
+      memo: input.memo ?? null,
+    };
+  } catch (err) {
+    if (err instanceof MaxioServiceError) throw err;
+    throw toMaxioServiceError(err, 'recordUsage');
+  }
+}
+
+/**
+ * Sum recorded usage for the component since the start of the subscription's
+ * current billing period. Best-effort: if the period start can't be read, falls
+ * back to summing all usages for the component.
+ */
+async function readPeriodUsageTotal(
+  subscriptionId: number,
+  componentHandle: string,
+): Promise<number> {
+  let sinceDate: string | undefined;
+  try {
+    const { result } = await maxio.subscriptions.readSubscription(subscriptionId);
+    const periodStart = result.subscription?.currentPeriodStartedAt;
+    if (periodStart) {
+      // listUsages.sinceDate filters on created_at date (midnight granularity).
+      sinceDate = periodStart.slice(0, 10);
+    }
+  } catch {
+    // Non-fatal — proceed without a date filter.
+  }
+
+  const { result: usages } = await maxio.subscriptionComponents.listUsages({
+    subscriptionIdOrReference: subscriptionId,
+    componentId: `handle:${componentHandle}`,
+    perPage: 200,
+    ...(sinceDate ? { sinceDate } : {}),
+  });
+
+  return usages.reduce((sum, entry) => sum + toNumber(entry.usage?.quantity), 0);
 }

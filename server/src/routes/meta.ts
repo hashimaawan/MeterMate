@@ -11,6 +11,7 @@ import { sessionStore } from '../stores/sessionStore.js';
 import { transactionStore } from '../stores/transactionStore.js';
 import { listPlans } from '../services/maxioService.js';
 import { slackHealthCheck } from '../services/slackService.js';
+import { METERED_COMPONENTS, formatUnitPrice } from '../catalog.js';
 
 const log = createLogger('route:meta');
 
@@ -43,6 +44,19 @@ metaRouter.get('/products', async (_req: Request, res: Response) => {
     log.error('Failed to list products', { reason });
     res.status(502).json({ status: 'maxio_failed', error: reason });
   }
+});
+
+metaRouter.get('/components', (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'ok',
+    components: METERED_COMPONENTS.map((c) => ({
+      handle: c.handle,
+      name: c.name,
+      unitName: c.unitName,
+      priceFormatted: formatUnitPrice(c),
+      kind: 'metered',
+    })),
+  });
 });
 
 metaRouter.get('/consultants', (_req: Request, res: Response) => {

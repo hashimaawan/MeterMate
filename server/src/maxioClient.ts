@@ -9,6 +9,7 @@ import {
   Client,
   Environment,
   SubscriptionsController,
+  SubscriptionComponentsController,
   ProductsController,
   ProductFamiliesController,
   ComponentsController,
@@ -38,6 +39,7 @@ log.info('Maxio client configured', {
 export const maxio = {
   client,
   subscriptions: new SubscriptionsController(client),
+  subscriptionComponents: new SubscriptionComponentsController(client),
   products: new ProductsController(client),
   productFamilies: new ProductFamiliesController(client),
   components: new ComponentsController(client),

@@ -11,10 +11,11 @@
  *
  * Run: `npm run seed`
  */
-import { IntervalUnit } from '@maxio-com/advanced-billing-sdk';
+import { IntervalUnit, PricingScheme } from '@maxio-com/advanced-billing-sdk';
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
 import { maxio, toMaxioServiceError } from '../maxioClient.js';
+import { METERED_COMPONENTS, type MeteredComponentDef } from '../catalog.js';
 
 const log = createLogger('seed');
 
@@ -91,6 +92,41 @@ async function ensurePlan(familyId: number, plan: PlanSeed): Promise<void> {
   log.info('Created plan', { handle: plan.handle, id: result.product?.id });
 }
 
+async function ensureMeteredComponent(
+  familyId: number,
+  component: MeteredComponentDef,
+): Promise<void> {
+  // Detect an existing component *inside our family* — handles are globally
+  // unique on a shared site, so we verify family membership, not just the handle.
+  const existing = await maxio.components.listComponentsForProductFamily({
+    productFamilyId: familyId,
+    perPage: 200,
+  });
+  const match = existing.result.find((e) => e.component?.handle === component.handle);
+  if (match?.component?.id) {
+    log.info('Component already exists in family', {
+      handle: component.handle,
+      id: match.component.id,
+    });
+    return;
+  }
+
+  const { result } = await maxio.components.createMeteredComponent(String(familyId), {
+    meteredComponent: {
+      name: component.name,
+      unitName: component.unitName,
+      handle: component.handle,
+      taxable: false,
+      pricingScheme: PricingScheme.PerUnit,
+      prices: [{ startingQuantity: 1, unitPrice: component.unitPrice }],
+    },
+  });
+  log.info('Created metered component', {
+    handle: component.handle,
+    id: result.component?.id,
+  });
+}
+
 async function main(): Promise<void> {
   log.info('Seeding Maxio test site', { site: config.maxio.siteSubdomain, family: FAMILY_HANDLE });
   try {
@@ -98,17 +134,28 @@ async function main(): Promise<void> {
     for (const plan of PLANS) {
       await ensurePlan(familyId, plan);
     }
+    for (const component of METERED_COMPONENTS) {
+      await ensureMeteredComponent(familyId, component);
+    }
 
     // Print the resulting catalog for verification.
     const { result } = await maxio.products.listProducts({ perPage: 200 });
-    const rows = result
+    const planRows = result
       .map((e) => e.product)
       .filter((p): p is NonNullable<typeof p> => Boolean(p?.handle))
       .map((p) => `  - ${p.handle}: ${p.name} — $${(Number(p.priceInCents ?? 0n) / 100).toFixed(2)}/mo`);
 
+    const componentRows = METERED_COMPONENTS.map(
+      (c) => `  - ${c.handle}: ${c.name} — $${c.unitPrice.toFixed(2)}/${c.unitName} (metered)`,
+    );
+
     log.info('Seed complete');
     // eslint-disable-next-line no-console
-    console.log(`\nSeeded plans in family "${FAMILY_HANDLE}":\n${rows.join('\n')}\n`);
+    console.log(
+      `\nSeeded plans in family "${FAMILY_HANDLE}":\n${planRows.join('\n')}\n\n` +
+        `Seeded metered components:\n${componentRows.join('\n')}\n\n` +
+        `Event-based component (api-calls) is deferred — it requires an EBB metric not creatable via the SDK.\n`,
+    );
   } catch (err) {
     const normalized = toMaxioServiceError(err, 'seed');
     log.error('Seed failed', { statusCode: normalized.statusCode, detail: normalized.detail });

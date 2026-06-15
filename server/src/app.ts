@@ -7,6 +7,7 @@ import cors from 'cors';
 import { createLogger } from './logger.js';
 import { metaRouter } from './routes/meta.js';
 import { bookRouter } from './routes/book.js';
+import { usageRouter } from './routes/usage.js';
 
 const log = createLogger('app');
 
@@ -19,6 +20,7 @@ export function createApp(): Express {
   // Mount API routes under /api.
   app.use('/api', metaRouter);
   app.use('/api', bookRouter);
+  app.use('/api', usageRouter);
 
   // 404 for unknown API routes.
   app.use('/api', (_req: Request, res: Response) => {
