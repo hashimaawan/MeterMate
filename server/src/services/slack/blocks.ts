@@ -176,6 +176,37 @@ export function buildPlanChanged(input: {
   return blocks;
 }
 
+/** UC4 in-progress message. */
+export function buildLifecycleInProgress(actionLabel: string): KnownBlock[] {
+  return [
+    header(':vertical_traffic_light: ' + `${capitalize(actionLabel)} in progress…`),
+  ];
+}
+
+/** UC4 completion message. */
+export function buildLifecycleDone(input: {
+  transition: string;
+  reason: string | null;
+  effective: string;
+  manageUrl: string | null;
+}): KnownBlock[] {
+  const fields: BillingField[] = [
+    { label: 'Transition', value: `\`${escape(input.transition)}\`` },
+    { label: 'Effective', value: escape(input.effective) },
+  ];
+  if (input.reason) fields.push({ label: 'Reason', value: escape(input.reason) });
+  const blocks: KnownBlock[] = [
+    header(':vertical_traffic_light: Lifecycle updated'),
+    fieldsGrid(fields),
+  ];
+  if (input.manageUrl) blocks.push(linkButton('View in Maxio', input.manageUrl));
+  return blocks;
+}
+
+function capitalize(value: string): string {
+  return value.length === 0 ? value : value[0]!.toUpperCase() + value.slice(1);
+}
+
 /** Generic failure message reused across UCs. */
 export function buildFailure(input: {
   useCase: string;

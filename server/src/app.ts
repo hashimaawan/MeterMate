@@ -9,6 +9,7 @@ import { metaRouter } from './routes/meta.js';
 import { bookRouter } from './routes/book.js';
 import { usageRouter } from './routes/usage.js';
 import { planChangeRouter } from './routes/planChange.js';
+import { lifecycleRouter } from './routes/lifecycle.js';
 
 const log = createLogger('app');
 
@@ -23,6 +24,7 @@ export function createApp(): Express {
   app.use('/api', bookRouter);
   app.use('/api', usageRouter);
   app.use('/api', planChangeRouter);
+  app.use('/api', lifecycleRouter);
 
   // 404 for unknown API routes.
   app.use('/api', (_req: Request, res: Response) => {

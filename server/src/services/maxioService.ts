@@ -438,3 +438,131 @@ export async function applyPlanChange(input: {
     throw toMaxioServiceError(err, 'applyPlanChange');
   }
 }
+
+export type LifecycleAction = 'pause' | 'resume' | 'cancel' | 'reactivate';
+export type CancelType = 'immediate' | 'end-of-period';
+
+/** Normalized result of a UC4 lifecycle action. */
+export interface LifecycleResult {
+  action: LifecycleAction;
+  cancelType: CancelType | null;
+  previousState: string;
+  newState: string;
+  /** True when cancellation is scheduled for period end rather than immediate. */
+  scheduled: boolean;
+  /** Effective date for scheduled actions (ISO), else null (immediate). */
+  effectiveDate: string | null;
+  reason: string | null;
+  manageUrl: string;
+}
+
+export interface LifecycleInput {
+  subscriptionId: number;
+  action: LifecycleAction;
+  cancelType?: CancelType;
+  /** Free-text reason; recorded as the cancellation message. */
+  reason?: string;
+}
+
+/**
+ * UC4 — dispatch a lifecycle action to its matching Maxio operation:
+ *   pause  → place on hold        resume → resume on-hold
+ *   cancel (immediate)            → cancel now
+ *   cancel (end-of-period)        → delayed cancellation
+ *   reactivate                    → reactivate a canceled subscription
+ *
+ * The supplied free-text reason is recorded as the cancellation message (we do
+ * not send a Maxio `reason_code`, which must be a pre-defined site value).
+ */
+export async function lifecycleAction(input: LifecycleInput): Promise<LifecycleResult> {
+  try {
+    const before = await maxio.subscriptions.readSubscription(input.subscriptionId);
+    const previousState = String(before.result.subscription?.state ?? 'unknown');
+
+    log.info('Lifecycle action', {
+      subscriptionId: input.subscriptionId,
+      action: input.action,
+      cancelType: input.cancelType,
+    });
+
+    const base = {
+      action: input.action,
+      cancelType: input.cancelType ?? null,
+      previousState,
+      reason: input.reason ?? null,
+      manageUrl: subscriptionManageUrl(input.subscriptionId),
+    };
+
+    switch (input.action) {
+      case 'pause': {
+        const { result } = await maxio.subscriptionStatus.pauseSubscription(input.subscriptionId);
+        return {
+          ...base,
+          newState: String(result.subscription?.state ?? 'on_hold'),
+          scheduled: false,
+          effectiveDate: null,
+        };
+      }
+      case 'resume': {
+        const { result } = await maxio.subscriptionStatus.resumeSubscription(input.subscriptionId);
+        return {
+          ...base,
+          newState: String(result.subscription?.state ?? 'active'),
+          scheduled: false,
+          effectiveDate: null,
+        };
+      }
+      case 'reactivate': {
+        const { result } = await maxio.subscriptionStatus.reactivateSubscription(
+          input.subscriptionId,
+        );
+        return {
+          ...base,
+          newState: String(result.subscription?.state ?? 'active'),
+          scheduled: false,
+          effectiveDate: null,
+        };
+      }
+      case 'cancel': {
+        if (input.cancelType === 'end-of-period') {
+          // Delayed cancellation returns only a message; read back state/date.
+          await maxio.subscriptionStatus.initiateDelayedCancellation(input.subscriptionId, {
+            subscription: {
+              cancelAtEndOfPeriod: true,
+              ...(input.reason ? { cancellationMessage: input.reason } : {}),
+            },
+          });
+          const after = await maxio.subscriptions.readSubscription(input.subscriptionId);
+          const sub = after.result.subscription;
+          return {
+            ...base,
+            newState: String(sub?.state ?? previousState),
+            scheduled: true,
+            effectiveDate: sub?.delayedCancelAt ?? sub?.currentPeriodEndsAt ?? null,
+          };
+        }
+        // Immediate cancellation.
+        const { result } = await maxio.subscriptionStatus.cancelSubscription(input.subscriptionId, {
+          subscription: {
+            cancelAtEndOfPeriod: false,
+            ...(input.reason ? { cancellationMessage: input.reason } : {}),
+          },
+        });
+        return {
+          ...base,
+          newState: String(result.subscription?.state ?? 'canceled'),
+          scheduled: false,
+          effectiveDate: null,
+        };
+      }
+      default: {
+        // Exhaustiveness guard — unreachable for the typed union.
+        const never: never = input.action;
+        throw new MaxioServiceError('Unknown lifecycle action', null, String(never));
+      }
+    }
+  } catch (err) {
+    if (err instanceof MaxioServiceError) throw err;
+    throw toMaxioServiceError(err, 'lifecycleAction');
+  }
+}
