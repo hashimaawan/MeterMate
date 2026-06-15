@@ -408,3 +408,37 @@ export function postInvoice(
     Authorization: basicAuthHeader(creds),
   });
 }
+
+export interface DigestData {
+  consultantId: string;
+  consultantName: string;
+  windowDays: number;
+  totalTracked: number;
+  activeCount: number;
+  mrrFormatted: string;
+  newSignups: number;
+  churn: number;
+  openInvoices: number;
+  outstandingFormatted: string;
+  postedToChannel: string | null;
+  note: string;
+}
+
+export interface DigestOk {
+  status: 'ok';
+  digest: DigestData;
+}
+
+export type DigestResponse =
+  | DigestOk
+  | DiscriminatedFailures['invalid']
+  | DiscriminatedFailures['maxioFailed'];
+
+export function postDigest(
+  input: { consultantId: string; windowDays: number },
+  creds: AdminCredentials,
+): Promise<DigestResponse> {
+  return postDiscriminated<DigestResponse>('/api/digest', input, {
+    Authorization: basicAuthHeader(creds),
+  });
+}

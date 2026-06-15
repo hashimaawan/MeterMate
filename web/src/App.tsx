@@ -11,17 +11,20 @@ import { PlanChangeForm } from './components/client/PlanChangeForm';
 import { LifecycleForm } from './components/client/LifecycleForm';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { InvoiceForm } from './components/admin/InvoiceForm';
+import { ActivityPanel } from './components/admin/ActivityPanel';
 import type { TxnSummary } from './transactions';
 import type { AdminCredentials } from './adminAuth';
 
 type Role = 'client' | 'admin';
 type ClientView = 'book' | 'usage' | 'plan' | 'lifecycle';
+type AdminView = 'invoice' | 'activity';
 
 export default function App() {
   const [role, setRole] = useState<Role>('client');
   const [clientView, setClientView] = useState<ClientView>('book');
   const [transactions, setTransactions] = useState<TxnSummary[]>([]);
   const [adminCreds, setAdminCreds] = useState<AdminCredentials | null>(null);
+  const [adminView, setAdminView] = useState<AdminView>('invoice');
 
   const addTransaction = useCallback((txn: TxnSummary) => {
     setTransactions((prev) => {
@@ -112,7 +115,24 @@ export default function App() {
                   Sign out
                 </button>
               </div>
-              <InvoiceForm transactions={transactions} creds={adminCreds} />
+              <nav className="subnav" aria-label="Admin actions">
+                <button
+                  type="button"
+                  className={adminView === 'invoice' ? 'subnav-item active' : 'subnav-item'}
+                  onClick={() => setAdminView('invoice')}
+                >
+                  Issue Invoice
+                </button>
+                <button
+                  type="button"
+                  className={adminView === 'activity' ? 'subnav-item active' : 'subnav-item'}
+                  onClick={() => setAdminView('activity')}
+                >
+                  Activity Digest
+                </button>
+              </nav>
+              {adminView === 'invoice' && <InvoiceForm transactions={transactions} creds={adminCreds} />}
+              {adminView === 'activity' && <ActivityPanel creds={adminCreds} />}
             </>
           ))}
       </main>

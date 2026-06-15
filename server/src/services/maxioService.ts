@@ -9,6 +9,7 @@ import {
   CollectionMethod,
   ComponentKind,
   CreateInvoiceStatus,
+  InvoiceStatus,
 } from '@maxio-com/advanced-billing-sdk';
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
@@ -662,5 +663,79 @@ export async function issueAndSendInvoice(input: IssueInvoiceInput): Promise<Inv
   } catch (err) {
     if (err instanceof MaxioServiceError) throw err;
     throw toMaxioServiceError(err, 'issueAndSendInvoice');
+  }
+}
+
+/** Aggregated billing figures for a UC6 digest (one consultant's scope). */
+export interface DigestAggregate {
+  totalTracked: number;
+  activeCount: number;
+  mrrFormatted: string;
+  newSignups: number;
+  churn: number;
+  openInvoices: number;
+  outstandingFormatted: string;
+}
+
+/**
+ * UC6 — aggregate live Maxio figures for a set of subscriptions (the caller
+ * scopes them to a consultant via the transaction store, since "consultant" is
+ * a MeterMate label, not a Maxio entity). Reads each subscription's live state
+ * and its open invoices. Reconciliation data, not real-time confirmation.
+ */
+export async function buildDigest(input: {
+  subscriptionIds: number[];
+  windowDays: number;
+}): Promise<DigestAggregate> {
+  try {
+    const cutoff = Date.now() - input.windowDays * 24 * 60 * 60 * 1000;
+    const ACTIVE_STATES = new Set(['active', 'trialing', 'assessing']);
+
+    let activeCount = 0;
+    let mrrCents = 0;
+    let newSignups = 0;
+    let churn = 0;
+    let openInvoices = 0;
+    let outstandingCents = 0;
+
+    for (const subscriptionId of input.subscriptionIds) {
+      const { result } = await maxio.subscriptions.readSubscription(subscriptionId);
+      const sub = result.subscription;
+      if (!sub) continue;
+
+      const state = String(sub.state ?? '');
+      if (ACTIVE_STATES.has(state)) {
+        activeCount += 1;
+        mrrCents += centsToNumber(sub.product?.priceInCents ?? sub.productPriceInCents);
+      }
+      if (sub.createdAt && Date.parse(sub.createdAt) >= cutoff) newSignups += 1;
+      if (state === 'canceled' && sub.canceledAt && Date.parse(sub.canceledAt) >= cutoff) {
+        churn += 1;
+      }
+
+      // Open invoices for this subscription (outstanding balance).
+      const { result: invoiceList } = await maxio.invoices.listInvoices({
+        subscriptionId,
+        status: InvoiceStatus.Open,
+        perPage: 200,
+      });
+      for (const inv of invoiceList.invoices ?? []) {
+        openInvoices += 1;
+        outstandingCents += Math.round(Number(inv.dueAmount ?? '0') * 100);
+      }
+    }
+
+    return {
+      totalTracked: input.subscriptionIds.length,
+      activeCount,
+      mrrFormatted: formatCents(mrrCents),
+      newSignups,
+      churn,
+      openInvoices,
+      outstandingFormatted: formatCents(outstandingCents),
+    };
+  } catch (err) {
+    if (err instanceof MaxioServiceError) throw err;
+    throw toMaxioServiceError(err, 'buildDigest');
   }
 }

@@ -88,6 +88,11 @@ export const transactionStore = {
     return [...transactions.values()].sort((a, b) => b.createdAt - a.createdAt);
   },
 
+  /** All transaction records for a consultant (used by the UC6 digest). */
+  listByConsultant(consultantId: string): TransactionRecord[] {
+    return this.list().filter((t) => t.consultantId === consultantId);
+  },
+
   size(): number {
     return transactions.size;
   },

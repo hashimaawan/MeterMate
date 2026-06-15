@@ -222,6 +222,21 @@ export async function postBlocks(
   }
 }
 
+/**
+ * Post a digest to the configured digest channel (UC6). Returns the channel id
+ * if posted, or null when no digest channel is configured. Failures are logged
+ * and swallowed (notification, not source of truth).
+ */
+export async function postDigest(blocks: KnownBlock[]): Promise<string | null> {
+  const channel = config.slack.digestChannel;
+  if (!channel) {
+    log.info('No SLACK_DIGEST_CHANNEL configured; digest not posted to Slack');
+    return null;
+  }
+  const posted = await postBlocks(channel, blocks, 'Billing digest');
+  return posted ? channel : null;
+}
+
 /** Boot-time health check: verify the bot token works. */
 export async function slackHealthCheck(): Promise<boolean> {
   try {

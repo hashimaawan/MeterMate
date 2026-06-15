@@ -242,6 +242,34 @@ export function buildFailure(input: {
   ];
 }
 
+/** UC6 digest message (posted to a consultant's digest channel). */
+export function buildDigest(input: {
+  consultantName: string;
+  windowDays: number;
+  activeCount: number;
+  mrr: string;
+  newSignups: number;
+  churn: number;
+  openInvoices: number;
+  outstanding: string;
+}): KnownBlock[] {
+  return [
+    header(':chart_with_upwards_trend: Billing digest'),
+    contextLine(`*${escape(input.consultantName)}* · last ${input.windowDays} days`),
+    fieldsGrid([
+      { label: 'Active subscriptions', value: String(input.activeCount) },
+      { label: 'MRR', value: escape(input.mrr) },
+      { label: 'New signups', value: String(input.newSignups) },
+      { label: 'Churn', value: String(input.churn) },
+      { label: 'Open invoices', value: String(input.openInvoices) },
+      { label: 'Outstanding', value: escape(input.outstanding) },
+    ]),
+    contextLine(
+      ':information_source: Reporting data is for reconciliation, not real-time confirmation; counts may lag live state slightly.',
+    ),
+  ];
+}
+
 /** A short note posted into the channel (e.g. invite fallback). */
 export function buildNote(text: string): KnownBlock[] {
   return [contextLine(`:information_source: ${escape(text)}`)];
