@@ -8,10 +8,11 @@ import { useCallback, useState } from 'react';
 import { BookForm } from './components/client/BookForm';
 import { UsageForm } from './components/client/UsageForm';
 import { PlanChangeForm } from './components/client/PlanChangeForm';
+import { LifecycleForm } from './components/client/LifecycleForm';
 import type { TxnSummary } from './transactions';
 
 type Role = 'client' | 'admin';
-type ClientView = 'book' | 'usage' | 'plan';
+type ClientView = 'book' | 'usage' | 'plan' | 'lifecycle';
 
 export default function App() {
   const [role, setRole] = useState<Role>('client');
@@ -80,11 +81,19 @@ export default function App() {
               >
                 Change Plan
               </button>
+              <button
+                type="button"
+                className={clientView === 'lifecycle' ? 'subnav-item active' : 'subnav-item'}
+                onClick={() => setClientView('lifecycle')}
+              >
+                Lifecycle
+              </button>
             </nav>
 
             {clientView === 'book' && <BookForm onBooked={addTransaction} />}
             {clientView === 'usage' && <UsageForm transactions={transactions} />}
             {clientView === 'plan' && <PlanChangeForm transactions={transactions} />}
+            {clientView === 'lifecycle' && <LifecycleForm transactions={transactions} />}
           </>
         )}
       </main>

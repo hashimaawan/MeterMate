@@ -311,3 +311,40 @@ export function postPlanChange(input: {
 }): Promise<PlanChangeResponse> {
   return postDiscriminated<PlanChangeResponse>('/api/plan-change', input);
 }
+
+export type LifecycleAction = 'pause' | 'resume' | 'cancel' | 'reactivate';
+export type CancelType = 'immediate' | 'end-of-period';
+
+export interface LifecycleResultData {
+  action: LifecycleAction;
+  cancelType: CancelType | null;
+  previousState: string;
+  newState: string;
+  scheduled: boolean;
+  effectiveDate: string | null;
+  reason: string | null;
+  manageUrl: string;
+}
+
+export interface LifecycleOk {
+  status: 'ok';
+  txnId: string;
+  channelId: string | null;
+  channelName: string | null;
+  lifecycle: LifecycleResultData;
+}
+
+export type LifecycleResponse =
+  | LifecycleOk
+  | DiscriminatedFailures['invalid']
+  | DiscriminatedFailures['sessionExpired']
+  | DiscriminatedFailures['maxioFailed'];
+
+export function postLifecycle(input: {
+  txnRef: string;
+  action: LifecycleAction;
+  cancelType?: CancelType;
+  reasonCode?: string;
+}): Promise<LifecycleResponse> {
+  return postDiscriminated<LifecycleResponse>('/api/lifecycle', input);
+}
