@@ -1,15 +1,28 @@
 /**
- * App shell. The plan models two roles (Client / Admin) selectable here. UC1 is
- * a Client action, so the Client view is active. Admin forms arrive with their
- * use cases (UC5/UC6); the role switch is structured so they slot in cleanly.
+ * App shell. The plan models two roles (Client / Admin). Client use cases are
+ * selectable via a sub-nav; UC1 (Book) and UC2 (Usage) are wired here, sharing
+ * the session's transaction list so usage can target a prior booking. Admin
+ * forms arrive with their use cases (UC5/UC6).
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { BookForm } from './components/client/BookForm';
+import { UsageForm } from './components/client/UsageForm';
+import type { TxnSummary } from './transactions';
 
 type Role = 'client' | 'admin';
+type ClientView = 'book' | 'usage';
 
 export default function App() {
   const [role, setRole] = useState<Role>('client');
+  const [clientView, setClientView] = useState<ClientView>('book');
+  const [transactions, setTransactions] = useState<TxnSummary[]>([]);
+
+  const addTransaction = useCallback((txn: TxnSummary) => {
+    setTransactions((prev) => {
+      const withoutDup = prev.filter((t) => t.txnId !== txn.txnId);
+      return [txn, ...withoutDup];
+    });
+  }, []);
 
   return (
     <div className="app">
@@ -42,7 +55,29 @@ export default function App() {
       </header>
 
       <main className="content">
-        {role === 'client' && <BookForm />}
+        {role === 'client' && (
+          <>
+            <nav className="subnav" aria-label="Client actions">
+              <button
+                type="button"
+                className={clientView === 'book' ? 'subnav-item active' : 'subnav-item'}
+                onClick={() => setClientView('book')}
+              >
+                Book &amp; Subscribe
+              </button>
+              <button
+                type="button"
+                className={clientView === 'usage' ? 'subnav-item active' : 'subnav-item'}
+                onClick={() => setClientView('usage')}
+              >
+                Report Usage
+              </button>
+            </nav>
+
+            {clientView === 'book' && <BookForm onBooked={addTransaction} />}
+            {clientView === 'usage' && <UsageForm transactions={transactions} />}
+          </>
+        )}
       </main>
     </div>
   );

@@ -16,6 +16,14 @@ export interface Product {
   priceInCents: number;
 }
 
+export interface Component {
+  handle: string;
+  name: string;
+  unitName: string;
+  priceFormatted: string;
+  kind: string;
+}
+
 export type CollectionMethod = 'automatic' | 'remittance';
 
 export interface BookRequest {
@@ -69,6 +77,51 @@ export interface BookMaxioFailed {
 
 export type BookResponse = BookOk | BookInvalid | BookMaxioFailed;
 
+export interface UsageRequest {
+  txnRef: string;
+  componentHandle: string;
+  quantity: number;
+  memo?: string;
+}
+
+export interface UsageResult {
+  subscriptionId: number;
+  componentHandle: string;
+  componentName: string;
+  unit: string;
+  quantityRecorded: number;
+  periodTotal: number;
+  memo: string | null;
+}
+
+export interface UsageOk {
+  status: 'ok';
+  txnId: string;
+  channelId: string | null;
+  channelName: string | null;
+  usage: UsageResult;
+}
+
+export interface UsageInvalid {
+  status: 'invalid';
+  errors: FieldError[];
+}
+
+export interface UsageSessionExpired {
+  status: 'session_expired';
+  error: string;
+}
+
+export interface UsageMaxioFailed {
+  status: 'maxio_failed';
+  txnId: string;
+  channelId: string | null;
+  channelName: string | null;
+  error: string;
+}
+
+export type UsageResponse = UsageOk | UsageInvalid | UsageSessionExpired | UsageMaxioFailed;
+
 /** Thrown for transport/unexpected errors so the UI can show a single message. */
 export class ApiError extends Error {}
 
@@ -100,6 +153,15 @@ export async function fetchProducts(): Promise<Product[]> {
   return body.products;
 }
 
+export async function fetchComponents(): Promise<Component[]> {
+  const res = await fetch('/api/components');
+  const body = (await parseJson(res)) as { status?: string; components?: Component[] };
+  if (!res.ok || body.status !== 'ok' || !body.components) {
+    throw new ApiError('Failed to load components');
+  }
+  return body.components;
+}
+
 /**
  * Submit a booking. Returns the discriminated response for ok/invalid/
  * maxio_failed; throws ApiError only for genuine transport failures.
@@ -120,6 +182,35 @@ export async function postBook(input: BookRequest): Promise<BookResponse> {
 
   if (body.status === 'ok' || body.status === 'invalid' || body.status === 'maxio_failed') {
     return body as BookResponse;
+  }
+  throw new ApiError(`Unexpected response from server (HTTP ${res.status})`);
+}
+
+/**
+ * Record usage (UC2). Returns the discriminated response for
+ * ok/invalid/session_expired/maxio_failed; throws ApiError on transport errors.
+ */
+export async function postUsage(input: UsageRequest): Promise<UsageResponse> {
+  let res: Response;
+  try {
+    res = await fetch('/api/usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: getSessionId(), ...input }),
+    });
+  } catch (err) {
+    throw new ApiError(err instanceof Error ? err.message : 'Network error');
+  }
+
+  const body = (await parseJson(res)) as Partial<UsageResponse> & { status?: string };
+
+  if (
+    body.status === 'ok' ||
+    body.status === 'invalid' ||
+    body.status === 'session_expired' ||
+    body.status === 'maxio_failed'
+  ) {
+    return body as UsageResponse;
   }
   throw new ApiError(`Unexpected response from server (HTTP ${res.status})`);
 }

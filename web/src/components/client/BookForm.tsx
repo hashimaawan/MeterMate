@@ -16,6 +16,12 @@ import {
   type Consultant,
   type Product,
 } from '../../api';
+import type { TxnSummary } from '../../transactions';
+
+interface BookFormProps {
+  /** Called when a booking succeeds, so the session can track the new txn. */
+  onBooked?: (txn: TxnSummary) => void;
+}
 
 interface FormState {
   firstName: string;
@@ -37,7 +43,7 @@ const EMPTY_FORM: FormState = {
   couponCode: '',
 };
 
-export function BookForm() {
+export function BookForm({ onBooked }: BookFormProps) {
   const [consultants, setConsultants] = useState<Consultant[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingMeta, setLoadingMeta] = useState(true);
@@ -106,6 +112,13 @@ export function BookForm() {
         ...(form.couponCode.trim() ? { couponCode: form.couponCode.trim() } : {}),
       });
       setResult(response);
+      if (response.status === 'ok' && onBooked) {
+        onBooked({
+          txnId: response.txnId,
+          label: `${response.subscription.customerName} · ${response.subscription.planName}`,
+          channelName: response.channelName,
+        });
+      }
     } catch (err) {
       setTransportError(err instanceof ApiError ? err.message : 'Unexpected error');
     } finally {
