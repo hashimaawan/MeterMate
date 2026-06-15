@@ -1,0 +1,132 @@
+/**
+ * Pure Block Kit builders. Each returns a `KnownBlock[]` and touches no Slack
+ * client, so they are trivially unit-testable. One builder per "moment" in the
+ * transaction narrative (per plan §5).
+ */
+import type { KnownBlock } from '@slack/types';
+
+/** A single fact rendered in the message's fields grid. */
+export interface BillingField {
+  label: string;
+  value: string;
+}
+
+function header(text: string): KnownBlock {
+  return {
+    type: 'header',
+    text: { type: 'plain_text', text: truncate(text, 150), emoji: true },
+  };
+}
+
+function contextLine(text: string): KnownBlock {
+  return {
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: truncate(text, 3000) }],
+  };
+}
+
+function fieldsGrid(fields: BillingField[]): KnownBlock {
+  return {
+    type: 'section',
+    fields: fields
+      .slice(0, 10) // Slack caps a section at 10 fields.
+      .map((f) => ({ type: 'mrkdwn', text: `*${f.label}*\n${f.value}` })),
+  };
+}
+
+function linkButton(text: string, url: string): KnownBlock {
+  return {
+    type: 'actions',
+    elements: [
+      {
+        type: 'button',
+        text: { type: 'plain_text', text, emoji: true },
+        url,
+      },
+    ],
+  };
+}
+
+function truncate(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+/** Posted once when a transaction channel is opened. */
+export function buildChannelOpened(input: {
+  consultantName: string;
+  clientName: string;
+  clientEmail: string;
+  type: string;
+}): KnownBlock[] {
+  return [
+    header(':wave: Transaction started'),
+    contextLine(`MeterMate billing concierge · *${escape(input.type)}*`),
+    fieldsGrid([
+      { label: 'Consultant', value: escape(input.consultantName) },
+      { label: 'Client', value: `${escape(input.clientName)} (${escape(input.clientEmail)})` },
+    ]),
+  ];
+}
+
+/** UC1 in-progress message. */
+export function buildBookingStarted(planLabel: string): KnownBlock[] {
+  return [
+    header(':hourglass_flowing_sand: Booking started'),
+    contextLine(`Creating your subscription on *${escape(planLabel)}*…`),
+  ];
+}
+
+/** UC1 completion message. */
+export function buildSubscriptionActive(input: {
+  customerName: string;
+  customerEmail: string;
+  planLabel: string;
+  mrr: string;
+  state: string;
+  nextAssessmentAt: string | null;
+  manageUrl: string | null;
+}): KnownBlock[] {
+  const fields: BillingField[] = [
+    { label: 'Customer', value: `${escape(input.customerName)} (${escape(input.customerEmail)})` },
+    { label: 'Plan', value: escape(input.planLabel) },
+    { label: 'MRR', value: escape(input.mrr) },
+    { label: 'State', value: `\`${escape(input.state)}\`` },
+    {
+      label: 'Next assessment',
+      value: input.nextAssessmentAt ? escape(formatDate(input.nextAssessmentAt)) : '—',
+    },
+  ];
+  const blocks: KnownBlock[] = [
+    header(':tada: Subscription active'),
+    fieldsGrid(fields),
+  ];
+  if (input.manageUrl) blocks.push(linkButton('View in Maxio', input.manageUrl));
+  return blocks;
+}
+
+/** Generic failure message reused across UCs. */
+export function buildFailure(input: {
+  useCase: string;
+  reason: string;
+}): KnownBlock[] {
+  return [
+    header(`:warning: ${input.useCase} failed`),
+    fieldsGrid([{ label: 'Reason', value: escape(truncate(input.reason, 2800)) }]),
+  ];
+}
+
+/** A short note posted into the channel (e.g. invite fallback). */
+export function buildNote(text: string): KnownBlock[] {
+  return [contextLine(`:information_source: ${escape(text)}`)];
+}
+
+function escape(value: string): string {
+  // Slack mrkdwn escaping for the three reserved characters.
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+}
