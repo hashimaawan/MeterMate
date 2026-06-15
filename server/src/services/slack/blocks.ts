@@ -207,6 +207,30 @@ function capitalize(value: string): string {
   return value.length === 0 ? value : value[0]!.toUpperCase() + value.slice(1);
 }
 
+/** UC5 in-progress message. */
+export function buildInvoiceIssuing(): KnownBlock[] {
+  return [header(':receipt: Issuing invoice…')];
+}
+
+/** UC5 completion message. */
+export function buildInvoiceIssued(input: {
+  number: string;
+  amountDue: string;
+  dueDate: string | null;
+  emailed: boolean;
+  payUrl: string | null;
+}): KnownBlock[] {
+  const fields: BillingField[] = [
+    { label: 'Invoice', value: escape(input.number) },
+    { label: 'Amount due', value: escape(input.amountDue) },
+    { label: 'Due date', value: input.dueDate ? escape(formatDate(input.dueDate)) : '—' },
+    { label: 'Delivery', value: input.emailed ? 'Emailed to client' : 'Not emailed' },
+  ];
+  const blocks: KnownBlock[] = [header(':receipt: Invoice issued'), fieldsGrid(fields)];
+  if (input.payUrl) blocks.push(linkButton('Pay Invoice', input.payUrl));
+  return blocks;
+}
+
 /** Generic failure message reused across UCs. */
 export function buildFailure(input: {
   useCase: string;

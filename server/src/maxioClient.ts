@@ -15,6 +15,7 @@ import {
   ProductsController,
   ProductFamiliesController,
   ComponentsController,
+  InvoicesController,
   type ApiError,
 } from '@maxio-com/advanced-billing-sdk';
 import { config } from './config.js';
@@ -47,6 +48,7 @@ export const maxio = {
   products: new ProductsController(client),
   productFamilies: new ProductFamiliesController(client),
   components: new ComponentsController(client),
+  invoices: new InvoicesController(client),
 };
 
 /**

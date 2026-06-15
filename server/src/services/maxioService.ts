@@ -5,7 +5,11 @@
  *
  * UC1 (Book & Subscribe) is implemented here; later UCs add their own functions.
  */
-import { CollectionMethod, ComponentKind } from '@maxio-com/advanced-billing-sdk';
+import {
+  CollectionMethod,
+  ComponentKind,
+  CreateInvoiceStatus,
+} from '@maxio-com/advanced-billing-sdk';
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
 import { maxio, toMaxioServiceError, MaxioServiceError } from '../maxioClient.js';
@@ -564,5 +568,99 @@ export async function lifecycleAction(input: LifecycleInput): Promise<LifecycleR
   } catch (err) {
     if (err instanceof MaxioServiceError) throw err;
     throw toMaxioServiceError(err, 'lifecycleAction');
+  }
+}
+
+export interface InvoiceLineItem {
+  title: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+/** Normalized result of a UC5 invoice issue+send. */
+export interface InvoiceResult {
+  uid: string;
+  number: string;
+  status: string;
+  totalAmountFormatted: string;
+  dueAmountFormatted: string;
+  dueDate: string | null;
+  issueDate: string | null;
+  publicUrl: string | null;
+  emailed: boolean;
+}
+
+export interface IssueInvoiceInput {
+  subscriptionId: number;
+  lineItems: InvoiceLineItem[];
+  memo?: string;
+  sendEmail: boolean;
+  /** Recipient for the emailed invoice (the client's email). */
+  recipientEmail?: string;
+}
+
+function formatAmountString(amount: string | null | undefined): string {
+  if (!amount) return '$0.00';
+  const n = Number(amount);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : `$${amount}`;
+}
+
+/**
+ * UC5 — create an ad-hoc invoice for the subscription from line items, issue it,
+ * and optionally email it to the customer. Returns the issued invoice's amount
+ * due, due date, status, and hosted public payment URL.
+ *
+ * Created as a draft, then explicitly issued, so the create→issue→send steps are
+ * distinct and observable (per plan §UC5).
+ */
+export async function issueAndSendInvoice(input: IssueInvoiceInput): Promise<InvoiceResult> {
+  try {
+    log.info('Creating ad-hoc invoice', {
+      subscriptionId: input.subscriptionId,
+      lineItemCount: input.lineItems.length,
+      sendEmail: input.sendEmail,
+    });
+
+    const { result: created } = await maxio.invoices.createInvoice(input.subscriptionId, {
+      invoice: {
+        status: CreateInvoiceStatus.Draft,
+        lineItems: input.lineItems.map((li) => ({
+          title: li.title,
+          quantity: li.quantity,
+          unitPrice: li.unitPrice,
+        })),
+        ...(input.memo ? { memo: input.memo } : {}),
+      },
+    });
+
+    const uid = created.invoice?.uid;
+    if (!uid) throw new Error('Maxio returned an invoice with no uid');
+
+    // Issue the draft so it becomes a real, payable invoice with a public URL.
+    const { result: issued } = await maxio.invoices.issueInvoice(uid);
+
+    let emailed = false;
+    if (input.sendEmail) {
+      await maxio.invoices.sendInvoice(uid, {
+        ...(input.recipientEmail ? { recipientEmails: [input.recipientEmail] } : {}),
+      });
+      emailed = true;
+      log.info('Invoice emailed', { uid });
+    }
+
+    return {
+      uid,
+      number: issued.number ?? uid,
+      status: String(issued.status ?? 'open'),
+      totalAmountFormatted: formatAmountString(issued.totalAmount),
+      dueAmountFormatted: formatAmountString(issued.dueAmount),
+      dueDate: issued.dueDate ?? null,
+      issueDate: issued.issueDate ?? null,
+      publicUrl: issued.publicUrl ?? null,
+      emailed,
+    };
+  } catch (err) {
+    if (err instanceof MaxioServiceError) throw err;
+    throw toMaxioServiceError(err, 'issueAndSendInvoice');
   }
 }
