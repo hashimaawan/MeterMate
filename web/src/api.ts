@@ -122,6 +122,65 @@ export interface UsageMaxioFailed {
 
 export type UsageResponse = UsageOk | UsageInvalid | UsageSessionExpired | UsageMaxioFailed;
 
+export type PlanChangeTiming = 'prorate' | 'at-renewal';
+
+export interface PlanChangePreview {
+  targetHandle: string;
+  proratedAdjustmentFormatted: string;
+  chargeFormatted: string;
+  creditAppliedFormatted: string;
+  paymentDueFormatted: string;
+  paymentDueInCents: number;
+  currentPlanHandle: string;
+  currentPlanName: string;
+}
+
+export interface PreviewOk {
+  status: 'ok';
+  txnId: string;
+  channelId: string | null;
+  channelName: string | null;
+  preview: PlanChangePreview;
+}
+
+export interface PlanChangeResultData {
+  timing: PlanChangeTiming;
+  oldPlanHandle: string;
+  oldPlanName: string;
+  newPlanHandle: string;
+  newPlanName: string;
+  state: string;
+  prorated: boolean;
+  effectiveDate: string | null;
+  manageUrl: string;
+}
+
+export interface PlanChangeOk {
+  status: 'ok';
+  txnId: string;
+  channelId: string | null;
+  channelName: string | null;
+  planChange: PlanChangeResultData;
+}
+
+interface DiscriminatedFailures {
+  invalid: { status: 'invalid'; errors: FieldError[] };
+  sessionExpired: { status: 'session_expired'; error: string };
+  maxioFailed: { status: 'maxio_failed'; error: string; channelName?: string | null };
+}
+
+export type PreviewResponse =
+  | PreviewOk
+  | DiscriminatedFailures['invalid']
+  | DiscriminatedFailures['sessionExpired']
+  | DiscriminatedFailures['maxioFailed'];
+
+export type PlanChangeResponse =
+  | PlanChangeOk
+  | DiscriminatedFailures['invalid']
+  | DiscriminatedFailures['sessionExpired']
+  | DiscriminatedFailures['maxioFailed'];
+
 /** Thrown for transport/unexpected errors so the UI can show a single message. */
 export class ApiError extends Error {}
 
@@ -213,4 +272,42 @@ export async function postUsage(input: UsageRequest): Promise<UsageResponse> {
     return body as UsageResponse;
   }
   throw new ApiError(`Unexpected response from server (HTTP ${res.status})`);
+}
+
+const KNOWN_STATUSES = ['ok', 'invalid', 'session_expired', 'maxio_failed'] as const;
+
+async function postDiscriminated<T extends { status: string }>(
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: getSessionId(), ...payload }),
+    });
+  } catch (err) {
+    throw new ApiError(err instanceof Error ? err.message : 'Network error');
+  }
+  const body = (await parseJson(res)) as { status?: string };
+  if (body.status && (KNOWN_STATUSES as readonly string[]).includes(body.status)) {
+    return body as T;
+  }
+  throw new ApiError(`Unexpected response from server (HTTP ${res.status})`);
+}
+
+export function postPlanChangePreview(input: {
+  txnRef: string;
+  targetHandle: string;
+}): Promise<PreviewResponse> {
+  return postDiscriminated<PreviewResponse>('/api/plan-change/preview', input);
+}
+
+export function postPlanChange(input: {
+  txnRef: string;
+  targetHandle: string;
+  timing: PlanChangeTiming;
+}): Promise<PlanChangeResponse> {
+  return postDiscriminated<PlanChangeResponse>('/api/plan-change', input);
 }

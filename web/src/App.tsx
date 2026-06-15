@@ -7,10 +7,11 @@
 import { useCallback, useState } from 'react';
 import { BookForm } from './components/client/BookForm';
 import { UsageForm } from './components/client/UsageForm';
+import { PlanChangeForm } from './components/client/PlanChangeForm';
 import type { TxnSummary } from './transactions';
 
 type Role = 'client' | 'admin';
-type ClientView = 'book' | 'usage';
+type ClientView = 'book' | 'usage' | 'plan';
 
 export default function App() {
   const [role, setRole] = useState<Role>('client');
@@ -72,10 +73,18 @@ export default function App() {
               >
                 Report Usage
               </button>
+              <button
+                type="button"
+                className={clientView === 'plan' ? 'subnav-item active' : 'subnav-item'}
+                onClick={() => setClientView('plan')}
+              >
+                Change Plan
+              </button>
             </nav>
 
             {clientView === 'book' && <BookForm onBooked={addTransaction} />}
             {clientView === 'usage' && <UsageForm transactions={transactions} />}
+            {clientView === 'plan' && <PlanChangeForm transactions={transactions} />}
           </>
         )}
       </main>
