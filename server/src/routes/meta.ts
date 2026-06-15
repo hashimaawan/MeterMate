@@ -12,6 +12,7 @@ import { transactionStore } from '../stores/transactionStore.js';
 import { listPlans } from '../services/maxioService.js';
 import { slackHealthCheck } from '../services/slackService.js';
 import { METERED_COMPONENTS, formatUnitPrice } from '../catalog.js';
+import { adminGuard } from '../auth.js';
 
 const log = createLogger('route:meta');
 
@@ -57,6 +58,11 @@ metaRouter.get('/components', (_req: Request, res: Response) => {
       kind: 'metered',
     })),
   });
+});
+
+/** Admin credential check — used by the SPA's admin login gate. */
+metaRouter.get('/admin/check', adminGuard, (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 metaRouter.get('/consultants', (_req: Request, res: Response) => {

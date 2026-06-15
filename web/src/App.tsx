@@ -9,7 +9,10 @@ import { BookForm } from './components/client/BookForm';
 import { UsageForm } from './components/client/UsageForm';
 import { PlanChangeForm } from './components/client/PlanChangeForm';
 import { LifecycleForm } from './components/client/LifecycleForm';
+import { AdminLogin } from './components/admin/AdminLogin';
+import { InvoiceForm } from './components/admin/InvoiceForm';
 import type { TxnSummary } from './transactions';
+import type { AdminCredentials } from './adminAuth';
 
 type Role = 'client' | 'admin';
 type ClientView = 'book' | 'usage' | 'plan' | 'lifecycle';
@@ -18,6 +21,7 @@ export default function App() {
   const [role, setRole] = useState<Role>('client');
   const [clientView, setClientView] = useState<ClientView>('book');
   const [transactions, setTransactions] = useState<TxnSummary[]>([]);
+  const [adminCreds, setAdminCreds] = useState<AdminCredentials | null>(null);
 
   const addTransaction = useCallback((txn: TxnSummary) => {
     setTransactions((prev) => {
@@ -48,8 +52,6 @@ export default function App() {
             type="button"
             className={role === 'admin' ? 'role active' : 'role'}
             onClick={() => setRole('admin')}
-            disabled
-            title="Admin tools arrive with UC5–UC6"
           >
             Admin
           </button>
@@ -96,6 +98,23 @@ export default function App() {
             {clientView === 'lifecycle' && <LifecycleForm transactions={transactions} />}
           </>
         )}
+
+        {role === 'admin' &&
+          (adminCreds === null ? (
+            <AdminLogin onAuthenticated={setAdminCreds} />
+          ) : (
+            <>
+              <div className="admin-bar">
+                <span>
+                  Signed in as <strong>{adminCreds.user}</strong>
+                </span>
+                <button type="button" className="btn-secondary" onClick={() => setAdminCreds(null)}>
+                  Sign out
+                </button>
+              </div>
+              <InvoiceForm transactions={transactions} creds={adminCreds} />
+            </>
+          ))}
       </main>
     </div>
   );

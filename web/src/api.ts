@@ -3,6 +3,7 @@
  * for UC1 (POST /api/book) plus the meta endpoints feeding the form's dropdowns.
  */
 import { getSessionId } from './session';
+import { basicAuthHeader, type AdminCredentials } from './adminAuth';
 
 export interface Consultant {
   id: string;
@@ -279,12 +280,13 @@ const KNOWN_STATUSES = ['ok', 'invalid', 'session_expired', 'maxio_failed'] as c
 async function postDiscriminated<T extends { status: string }>(
   url: string,
   payload: Record<string, unknown>,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(extraHeaders ?? {}) },
       body: JSON.stringify({ sessionId: getSessionId(), ...payload }),
     });
   } catch (err) {
@@ -295,6 +297,18 @@ async function postDiscriminated<T extends { status: string }>(
     return body as T;
   }
   throw new ApiError(`Unexpected response from server (HTTP ${res.status})`);
+}
+
+/** Validate admin credentials against the guarded check endpoint. */
+export async function checkAdmin(creds: AdminCredentials): Promise<boolean> {
+  try {
+    const res = await fetch('/api/admin/check', {
+      headers: { Authorization: basicAuthHeader(creds) },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function postPlanChangePreview(input: {
@@ -347,4 +361,50 @@ export function postLifecycle(input: {
   reasonCode?: string;
 }): Promise<LifecycleResponse> {
   return postDiscriminated<LifecycleResponse>('/api/lifecycle', input);
+}
+
+export interface InvoiceLineItem {
+  title: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface InvoiceResultData {
+  uid: string;
+  number: string;
+  status: string;
+  totalAmountFormatted: string;
+  dueAmountFormatted: string;
+  dueDate: string | null;
+  issueDate: string | null;
+  publicUrl: string | null;
+  emailed: boolean;
+}
+
+export interface InvoiceOk {
+  status: 'ok';
+  txnId: string;
+  channelId: string | null;
+  channelName: string | null;
+  invoice: InvoiceResultData;
+}
+
+export type InvoiceResponse =
+  | InvoiceOk
+  | DiscriminatedFailures['invalid']
+  | DiscriminatedFailures['sessionExpired']
+  | DiscriminatedFailures['maxioFailed'];
+
+export function postInvoice(
+  input: {
+    txnRef: string;
+    lineItems: InvoiceLineItem[];
+    memo?: string;
+    sendEmail: boolean;
+  },
+  creds: AdminCredentials,
+): Promise<InvoiceResponse> {
+  return postDiscriminated<InvoiceResponse>('/api/invoices', input, {
+    Authorization: basicAuthHeader(creds),
+  });
 }

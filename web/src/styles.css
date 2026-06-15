@@ -199,6 +199,84 @@ body {
   cursor: not-allowed;
 }
 
+.btn-secondary {
+  align-self: flex-start;
+  background: #eef2ff;
+  color: var(--primary);
+  border: 1px solid #c7d2fe;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: #b91c1c;
+  border-radius: 8px;
+  width: 38px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.lineitem {
+  display: grid;
+  grid-template-columns: 1fr 90px 110px 38px;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lineitem input {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.lineitem-total {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.admin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+
 .banner {
   margin-top: 20px;
   padding: 16px;
