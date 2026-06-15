@@ -136,6 +136,46 @@ export function buildUsageRecorded(input: {
   ];
 }
 
+/** UC3 preview message. */
+export function buildPlanChangePreview(input: {
+  oldPlanLabel: string;
+  newPlanLabel: string;
+  paymentDue: string;
+  proratedAdjustment: string;
+  credit: string;
+}): KnownBlock[] {
+  return [
+    header(':mag: Plan change preview'),
+    contextLine(`${escape(input.oldPlanLabel)} → *${escape(input.newPlanLabel)}* (prorated now)`),
+    fieldsGrid([
+      { label: 'Prorated adjustment', value: escape(input.proratedAdjustment) },
+      { label: 'Credit applied', value: escape(input.credit) },
+      { label: 'Payment due now', value: escape(input.paymentDue) },
+    ]),
+  ];
+}
+
+/** UC3 completion message. */
+export function buildPlanChanged(input: {
+  oldPlanLabel: string;
+  newPlanLabel: string;
+  prorated: boolean;
+  effective: string;
+  manageUrl: string | null;
+}): KnownBlock[] {
+  const blocks: KnownBlock[] = [
+    header(':arrows_counterclockwise: Plan changed'),
+    fieldsGrid([
+      { label: 'From', value: escape(input.oldPlanLabel) },
+      { label: 'To', value: escape(input.newPlanLabel) },
+      { label: 'Proration', value: input.prorated ? 'Prorated now' : 'None (at renewal)' },
+      { label: 'Effective', value: escape(input.effective) },
+    ]),
+  ];
+  if (input.manageUrl) blocks.push(linkButton('View in Maxio', input.manageUrl));
+  return blocks;
+}
+
 /** Generic failure message reused across UCs. */
 export function buildFailure(input: {
   useCase: string;

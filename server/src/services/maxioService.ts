@@ -280,3 +280,161 @@ async function readPeriodUsageTotal(
 
   return usages.reduce((sum, entry) => sum + toNumber(entry.usage?.quantity), 0);
 }
+
+export type PlanChangeTiming = 'prorate' | 'at-renewal';
+
+/** Normalized proration preview (UC3 preview). */
+export interface PlanChangePreview {
+  targetHandle: string;
+  proratedAdjustmentFormatted: string;
+  chargeFormatted: string;
+  creditAppliedFormatted: string;
+  paymentDueFormatted: string;
+  paymentDueInCents: number;
+}
+
+/** Normalized result of an applied plan change (UC3 commit). */
+export interface PlanChangeResult {
+  timing: PlanChangeTiming;
+  oldPlanHandle: string;
+  oldPlanName: string;
+  newPlanHandle: string;
+  newPlanName: string;
+  state: string;
+  prorated: boolean;
+  /** Null means "effective immediately"; otherwise the effective date (ISO). */
+  effectiveDate: string | null;
+  manageUrl: string;
+}
+
+export interface PlanRef {
+  handle: string;
+  name: string;
+}
+
+/** Read the subscription's current product handle/name. */
+export async function readSubscriptionPlan(subscriptionId: number): Promise<PlanRef> {
+  try {
+    const { result } = await maxio.subscriptions.readSubscription(subscriptionId);
+    const product = result.subscription?.product;
+    return {
+      handle: product?.handle ?? 'unknown',
+      name: product?.name ?? product?.handle ?? 'unknown',
+    };
+  } catch (err) {
+    throw toMaxioServiceError(err, 'readSubscriptionPlan');
+  }
+}
+
+/**
+ * UC3 preview — compute the prorated cost of moving the subscription to the
+ * target plan now. Uses `preservePeriod: true` so the preview reflects the same
+ * prorated mechanism the "prorate now" commit applies (plan §UC3).
+ */
+export async function previewPlanChange(input: {
+  subscriptionId: number;
+  targetHandle: string;
+}): Promise<PlanChangePreview> {
+  try {
+    log.info('Previewing plan change', {
+      subscriptionId: input.subscriptionId,
+      targetHandle: input.targetHandle,
+    });
+
+    const { result } = await maxio.subscriptionProducts.previewSubscriptionProductMigration(
+      input.subscriptionId,
+      {
+        migration: {
+          productHandle: input.targetHandle,
+          preservePeriod: true,
+          includeCoupons: true,
+        },
+      },
+    );
+
+    const preview = result.migration;
+    return {
+      targetHandle: input.targetHandle,
+      proratedAdjustmentFormatted: formatCents(preview?.proratedAdjustmentInCents),
+      chargeFormatted: formatCents(preview?.chargeInCents),
+      creditAppliedFormatted: formatCents(preview?.creditAppliedInCents),
+      paymentDueFormatted: formatCents(preview?.paymentDueInCents),
+      paymentDueInCents: centsToNumber(preview?.paymentDueInCents),
+    };
+  } catch (err) {
+    if (err instanceof MaxioServiceError) throw err;
+    throw toMaxioServiceError(err, 'previewPlanChange');
+  }
+}
+
+/**
+ * UC3 commit — apply the plan change.
+ *  - `prorate`    → migrate now with proration (preservePeriod: true).
+ *  - `at-renewal` → schedule a non-prorated product change for the next renewal
+ *                   via a delayed product change.
+ */
+export async function applyPlanChange(input: {
+  subscriptionId: number;
+  targetHandle: string;
+  timing: PlanChangeTiming;
+}): Promise<PlanChangeResult> {
+  try {
+    const oldPlan = await readSubscriptionPlan(input.subscriptionId);
+
+    if (input.timing === 'prorate') {
+      log.info('Applying prorated plan change', {
+        subscriptionId: input.subscriptionId,
+        targetHandle: input.targetHandle,
+      });
+      const { result } = await maxio.subscriptionProducts.migrateSubscriptionProduct(
+        input.subscriptionId,
+        {
+          migration: {
+            productHandle: input.targetHandle,
+            preservePeriod: true,
+            includeCoupons: true,
+          },
+        },
+      );
+      const sub = result.subscription;
+      return {
+        timing: 'prorate',
+        oldPlanHandle: oldPlan.handle,
+        oldPlanName: oldPlan.name,
+        newPlanHandle: sub?.product?.handle ?? input.targetHandle,
+        newPlanName: sub?.product?.name ?? input.targetHandle,
+        state: sub?.state ?? 'unknown',
+        prorated: true,
+        effectiveDate: null, // immediate
+        manageUrl: subscriptionManageUrl(input.subscriptionId),
+      };
+    }
+
+    // at-renewal — delayed, non-prorated product change.
+    log.info('Scheduling delayed plan change', {
+      subscriptionId: input.subscriptionId,
+      targetHandle: input.targetHandle,
+    });
+    const { result } = await maxio.subscriptions.updateSubscription(input.subscriptionId, {
+      subscription: {
+        productHandle: input.targetHandle,
+        productChangeDelayed: true,
+      },
+    });
+    const sub = result.subscription;
+    return {
+      timing: 'at-renewal',
+      oldPlanHandle: oldPlan.handle,
+      oldPlanName: oldPlan.name,
+      newPlanHandle: sub?.nextProductHandle ?? input.targetHandle,
+      newPlanName: sub?.nextProductHandle ?? input.targetHandle,
+      state: sub?.state ?? 'unknown',
+      prorated: false,
+      effectiveDate: sub?.currentPeriodEndsAt ?? null,
+      manageUrl: subscriptionManageUrl(input.subscriptionId),
+    };
+  } catch (err) {
+    if (err instanceof MaxioServiceError) throw err;
+    throw toMaxioServiceError(err, 'applyPlanChange');
+  }
+}
